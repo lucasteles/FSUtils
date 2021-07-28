@@ -3,6 +3,7 @@ module FSUtils
 
 open System.Collections.Generic
 open System
+open System.Linq
 
 [<AutoOpen>]
 module Common =
@@ -108,6 +109,17 @@ module Seq =
     let inline product col = Seq.foldBack (*) col 1.
     let repeat x = seq {while true do x}
 
+    let intersect (a: _ seq) (b: _ seq) = a.Intersect(b) :> _ seq
+    let union (a: _ seq) (b: _ seq) = a.Union(b) :> _ seq
+    let except (a: _ seq) (b: _ seq) = a.Except(b) :> _ seq
+    let add (item: 'a ) (col: 'a seq) = col.Append(item) :> _ seq
+    let nub (col: 'a seq) = Set col |> Set.toSeq
+    let delete (item: 'a) (col: 'a seq) =
+        let mutable skipped = false
+        seq { for v in col do
+                  if v = item && not skipped
+                  then skipped <- true
+                  else v}
 
 module List =
     let rec beginning =
@@ -166,7 +178,18 @@ module List =
 
     let repeat x = [ while true do x ]
 
+    let delete (item: 'a) (col: 'a list) =
+        let rec loop skipped = function
+            | [] -> []
+            | x::xs  ->
+                if x = item && not skipped
+                then loop true xs
+                else x :: loop skipped xs
+
+        loop false col
+
 module Tuple =
+
     let map f (a,b) = (f a, f b)
     let mapLeft f (a,b) = (f a, b)
     let mapRight f (a,b) = (a,f b)
@@ -244,3 +267,5 @@ module vai =
     String.unlines ["hello world"; "it's me,"; "eric"]
 
     String.words "the quick brown\n\nfox"
+    Seq.nub [1;2;3;4;3;2;1;2;4;3;5]
+    List.delete 3 [1;2;3;4;1;3;4]
