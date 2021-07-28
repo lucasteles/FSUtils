@@ -1,9 +1,13 @@
 ﻿[<AutoOpen>]
 module FSUtils
 
+open System.Collections.Concurrent
 open System.Collections.Generic
 open System
 open System.Linq
+open Microsoft.FSharp.Quotations
+open Microsoft.FSharp.Linq.RuntimeHelpers
+open System.Linq.Expressions
 
 [<AutoOpen>]
 module Common =
@@ -49,7 +53,63 @@ module Common =
     let dec n = n-1
     let subtract = flip (-)
 
+    let complement f = f >> not
+    let same a b = Object.ReferenceEquals(a,b)
+    let iif cond a b = if cond then a else b
+    let unless cond a b = if not cond then a else b
+    let juxt f g param = f param, g param
+    let juxt3 f g h param = f param, g param, h param
+    let identity n = n
+    let identity2 _ n = n
+    let inline pos n = sign n > 0
+    let inline neg n = sign n < 0
+    let inline zero n = sign n = 0
+    let isGuid n = Guid.TryParse((n : string)) |> fst
+
+    let memoize f =
+        let cache = Dictionary<_,_>()
+        fun c ->
+            match cache.TryGetValue c with
+            | true, value -> value
+            | _ ->
+                let value = f c
+                cache.Add (c, value)
+                value
+
+    let memoize2 f =
+        let cache = Dictionary<_,_>()
+        fun c d ->
+            let key = c,d
+            match cache.TryGetValue key with
+            | true, value -> value
+            | _ ->
+                let value = f c d
+                cache.Add ((c,d), value)
+                value
+
+    let memoizeSafe f =
+        let cache = ConcurrentDictionary<_,_>()
+        fun c ->
+            match cache.TryGetValue c with
+            | true, value -> value
+            | _ ->
+                let value = f c
+                cache.AddOrUpdate(c, value, fun _ b -> b)
+                value
+
+    let memoizeSafe2 f =
+        let cache = ConcurrentDictionary<_,_>()
+        fun c d ->
+            let key = c,d
+            match cache.TryGetValue key with
+            | true, value -> value
+            | _ ->
+                let value = f c d
+                cache.AddOrUpdate((c,d), value, fun _ b -> b)
+                value
 module Seq =
+
+    let asReadOnly col = col |> Seq.toArray :> IReadOnlyCollection<_>
     let interleave c1 c2 =
         Seq.zip c1 c2
         |> Seq.collect (fun (a, b) -> [ a; b ])
@@ -107,8 +167,9 @@ module Seq =
     let or' col = Seq.exists id col
 
     let inline product col = Seq.foldBack (*) col 1.
-    let repeat x = seq {while true do x}
+    let repeat x = seq {while true do yield x}
 
+    let cycle col = repeat col |> Seq.collect id
     let intersect (a: _ seq) (b: _ seq) = a.Intersect(b) :> _ seq
     let union (a: _ seq) (b: _ seq) = a.Union(b) :> _ seq
     let except (a: _ seq) (b: _ seq) = a.Except(b) :> _ seq
@@ -120,7 +181,8 @@ module Seq =
                   if v = item && not skipped
                   then skipped <- true
                   else v}
-
+    let headhead col = col |> Seq.head |> Seq.head
+    let tryHeadhead col = col |> Seq.tryHead |> Option.bind Seq.tryHead
 module List =
     let rec beginning =
         function
@@ -238,15 +300,69 @@ module String =
     let words str =
         str |> lines |> Array.collect (split ' ') |> List.ofArray |> List.filter (String.IsNullOrWhiteSpace >> not)
 
-module vai =
-    seq {
-        1
-        2
-        3
-        4
-    }
-    |> Seq.beginning
+module Expr =
+    let toLinq (expr : Expr<'a -> 'b>) =
+      let linq = LeafExpressionConverter.QuotationToExpression expr
+      let call = linq :?> MethodCallExpression
+      let lambda = call.Arguments.[0] :?> LambdaExpression
+      Expression.Lambda<Func<'a, 'b>>(lambda.Body, lambda.Parameters)
 
+module DateTime =
+    let add(value: TimeSpan, date: DateTime ) = date.Add(value)
+    let addDays(value: double, date: DateTime ) = date.AddDays (value)
+    let addHours(value: double, date: DateTime ) = date.AddHours (value)
+    let addMilliseconds(value: double, date: DateTime ) = date.AddMilliseconds (value)
+    let addMinutes(value: double, date: DateTime ) = date.AddMinutes (value)
+    let addMonths(months: int, date: DateTime ) = date.AddMonths (months)
+    let addSeconds(value: double, date: DateTime ) = date.AddSeconds (value)
+    let addTicks(value: int64, date: DateTime ) = date.AddTicks (value)
+    let addYears(value: int, date: DateTime ) = date.AddYears (value)
+    let date(date: DateTime) = date.Date
+    let kind(date: DateTime) = date.Kind
+    let subtract(value: TimeSpan, date: DateTime ) = date.Subtract (value)
+    let toLocalTime (date: DateTime) = date.ToLocalTime()
+    let toUniversalTime (date: DateTime) = date.ToUniversalTime()
+    let day (date: DateTime) = date.Day
+    let DayOfWeek (date: DateTime) = date.DayOfWeek
+    let hour (date: DateTime) = date.Hour
+    let second (date: DateTime) = date.Second
+    let minute (date: DateTime) = date.Minute
+    let millisecond (date: DateTime) = date.Millisecond
+    let month (date: DateTime) = date.Month
+    let year (date: DateTime) = date.Year
+    let ticks (date: DateTime) = date.Ticks
+    let dayOfYear (date: DateTime) = date.DayOfYear
+    let timeOfDay (date: DateTime) = date.TimeOfDay
+
+
+module DateTimeOffset =
+    let add(value: TimeSpan, date: DateTimeOffset ) = date.Add(value)
+    let addDays(value: double, date: DateTimeOffset ) = date.AddDays (value)
+    let addHours(value: double, date: DateTimeOffset ) = date.AddHours (value)
+    let addMilliseconds(value: double, date: DateTimeOffset ) = date.AddMilliseconds (value)
+    let addMinutes(value: double, date: DateTimeOffset ) = date.AddMinutes (value)
+    let addMonths(months: int, date: DateTimeOffset ) = date.AddMonths (months)
+    let addSeconds(value: double, date: DateTimeOffset ) = date.AddSeconds (value)
+    let addTicks(value: int64, date: DateTimeOffset ) = date.AddTicks (value)
+    let addYears(value: int, date: DateTimeOffset ) = date.AddYears (value)
+    let date(date: DateTimeOffset) = date.Date
+    let offset(date: DateTimeOffset) = date.Offset
+    let subtract(value: TimeSpan, date: DateTimeOffset ) = date.Subtract (value)
+    let toLocalTime (date: DateTimeOffset) = date.ToLocalTime()
+    let toUniversalTime (date: DateTimeOffset) = date.ToUniversalTime()
+    let day (date: DateTimeOffset) = date.Day
+    let DayOfWeek (date: DateTimeOffset) = date.DayOfWeek
+    let hour (date: DateTimeOffset) = date.Hour
+    let second (date: DateTimeOffset) = date.Second
+    let minute (date: DateTimeOffset) = date.Minute
+    let millisecond (date: DateTimeOffset) = date.Millisecond
+    let month (date: DateTimeOffset) = date.Month
+    let year (date: DateTimeOffset) = date.Year
+    let ticks (date: DateTimeOffset) = date.Ticks
+    let dayOfYear (date: DateTimeOffset) = date.DayOfYear
+    let timeOfDay (date: DateTimeOffset) = date.TimeOfDay
+
+module vai =
     Seq.intersperse "|" [ "a"; "b"; "c" ]
     |> Seq.beginning
     |> List.ofSeq
